@@ -12,7 +12,7 @@ st.set_page_config(
 )
 
 # -------------------------------------------
-# 2) Custom CSS (dynamischer Hintergrund, Google-Font, etc.)
+# 2) Custom CSS (animierter Tech-Hintergrund + Google-Font)
 # -------------------------------------------
 custom_css = """
 <style>
@@ -170,13 +170,13 @@ if "okr_data" not in st.session_state:
         st.session_state.okr_data = []
 
 # -------------------------------------------
-# 6) Kleine Hilfsfunktion, um "Bearbeiten-Mode" im Session State zu verwalten
+# 6) Bearbeiten-Mode im Session State verwalten
 # -------------------------------------------
 def get_edit_mode_key(cat_i, obj_i, item_idx):
     return f"edit_mode_{cat_i}_{obj_i}_{item_idx}"
 
 # -------------------------------------------
-# 7) Dashboard-Seite
+# 7) Dashboard-Seite: Hinzufügen / Bearbeiten / Löschen
 # -------------------------------------------
 def show_dashboard():
     st.title("OKR Dashboard – Animierter Hintergrund, Ampelsystem")
@@ -190,7 +190,6 @@ def show_dashboard():
         st.markdown(f"<div class='category-heading'>{cat['category_name']}</div>", unsafe_allow_html=True)
 
         for obj_i, obj in enumerate(cat["objectives"]):
-
             # Auto-Update: current_value = Anzahl items
             if obj.get("auto_update", False):
                 obj["current_value"] = float(len(obj["items"]))
@@ -199,7 +198,7 @@ def show_dashboard():
             col_left, col_right = st.columns([3, 2])
 
             with col_left:
-                # -- Name & Fortschrittsbalken
+                # 1) Name & Balken
                 st.markdown(f"**{obj['name']}**")
                 current = obj["current_value"]
                 target = obj["target_value"]
@@ -208,14 +207,18 @@ def show_dashboard():
                 st.markdown(bar_html, unsafe_allow_html=True)
                 st.markdown(f"{int(current)} / {int(target)} &nbsp; ({progress_percent:.1f}%)")
 
-                # -- "Neuen Eintrag hinzufügen"
+                # 2) "Neuen Eintrag hinzufügen" – nur wenn use_list = True
                 if obj.get("use_list", False):
                     st.markdown("#### Neuen Eintrag hinzufügen")
+                    new_item_key = f"new_item_{cat_i}_{obj_i}"
                     new_item = st.text_input(
-                        f"txt_new_{cat_i}_{obj_i}", 
-                        placeholder="Neuer Eintrag ..."
+                        label="",
+                        placeholder="Neuer Eintrag ...",
+                        key=new_item_key,
+                        label_visibility="collapsed"  # Versteckt das Label komplett
                     )
-                    if st.button("Hinzufügen", key=f"add_{cat_i}_{obj_i}"):
+
+                    if st.button("Hinzufügen", key=f"add_btn_{cat_i}_{obj_i}"):
                         txt = new_item.strip()
                         if txt:
                             obj["items"].append(txt)
@@ -223,27 +226,24 @@ def show_dashboard():
                                 obj["current_value"] = float(len(obj["items"]))
                             save_data_to_gist(st.session_state.okr_data)
                             st.success("Eintrag hinzugefügt!")
-            
+
+            # 3) Rechts: Bereits erfasste Einträge
             with col_right:
-                # -- Liste der Einträge
                 if obj.get("use_list", False) and obj["items"]:
                     st.markdown("#### Bereits erfasste Einträge:")
                     for item_idx, entry in enumerate(obj["items"]):
-                        # Prüfen, ob wir im Bearbeiten-Modus sind
+                        # Bearbeiten-Modus?
                         edit_mode_key = get_edit_mode_key(cat_i, obj_i, item_idx)
                         if edit_mode_key not in st.session_state:
                             st.session_state[edit_mode_key] = False
 
                         if not st.session_state[edit_mode_key]:
-                            # Normalmodus: Eintrag + Buttons
+                            # Normalmodus
                             st.write(f"{item_idx+1}) {entry}")
                             col_e, col_d = st.columns([1,1])
-
                             with col_e:
                                 if st.button("Bearbeiten", key=f"edit_btn_{cat_i}_{obj_i}_{item_idx}"):
-                                    # Bearbeitungsmodus aktivieren
                                     st.session_state[edit_mode_key] = True
-
                             with col_d:
                                 if st.button("Löschen", key=f"del_btn_{cat_i}_{obj_i}_{item_idx}"):
                                     obj["items"].pop(item_idx)
@@ -252,28 +252,24 @@ def show_dashboard():
                                     save_data_to_gist(st.session_state.okr_data)
                                     st.success("Eintrag wurde gelöscht!")
                         else:
-                            # Bearbeiten-Modus: Textfeld + Speichern
+                            # Bearbeitungsmodus
                             new_val = st.text_input(
                                 "Bearbeite Eintrag",
                                 value=entry,
                                 key=f"edit_val_{cat_i}_{obj_i}_{item_idx}"
                             )
                             if st.button("Speichern", key=f"save_btn_{cat_i}_{obj_i}_{item_idx}"):
-                                # Neuen Wert übernehmen
                                 obj["items"][item_idx] = new_val
                                 if obj.get("auto_update", False):
                                     obj["current_value"] = float(len(obj["items"]))
-                                # Speichern im Gist
                                 save_data_to_gist(st.session_state.okr_data)
                                 st.success("Eintrag aktualisiert!")
-                                # Bearbeitungsmodus wieder ausschalten
                                 st.session_state[edit_mode_key] = False
 
             st.write("---")
 
-
 # -------------------------------------------
-# 8) Update-Seite (Name, current_value, target_value, use_list, auto_update)
+# 8) Update-Seite (Checkboxen mit Hilfetext + Expander)
 # -------------------------------------------
 def show_update_page():
     st.title("OKRs aktualisieren")
@@ -283,16 +279,24 @@ def show_update_page():
         st.info("Keine Daten vorhanden.")
         return
 
+    # Expander für Erklärungen
+    with st.expander("Wissenswertes zu den Optionen"):
+        st.write("""
+        - **Liste aktivieren**: Ermöglicht das Anlegen einer Liste von Einträgen (z. B. Blog-Themen, Kunden o.Ä.).
+        - **Auto-Update**: Der aktuelle Wert (current_value) wird automatisch auf die Länge dieser Liste gesetzt.
+        """)
+
     for cat_i, cat in enumerate(okr_data):
         st.markdown(f"## {cat['category_name']}")
         for obj_i, obj in enumerate(cat["objectives"]):
+            # 1) Name des Ziels
             obj["name"] = st.text_input(
                 f"Name (#{obj_i+1})",
                 value=obj["name"],
                 key=f"name_{cat_i}_{obj_i}"
             )
 
-            # current_value nur editierbar, wenn auto_update = False
+            # 2) Aktueller Wert
             if obj.get("auto_update", False):
                 st.write(f"**Aktueller Wert (Auto-Update):** {int(obj['current_value'])}")
             else:
@@ -304,6 +308,7 @@ def show_update_page():
                     key=f"current_{cat_i}_{obj_i}"
                 )
 
+            # 3) Zielwert
             obj["target_value"] = st.number_input(
                 f"Zielwert (#{obj_i+1})",
                 min_value=0.0,
@@ -312,30 +317,37 @@ def show_update_page():
                 key=f"target_{cat_i}_{obj_i}"
             )
 
+            # 4) Liste aktivieren
             obj["use_list"] = st.checkbox(
                 f"Liste aktivieren? (#{obj_i+1})",
                 value=obj.get("use_list", False),
-                key=f"use_list_{cat_i}_{obj_i}"
+                key=f"use_list_{cat_i}_{obj_i}",
+                help="Ermöglicht das Anlegen einer Liste von Einträgen (z. B. für Blogpost-Themen)."
             )
 
+            # 5) Auto-Update
             obj["auto_update"] = st.checkbox(
                 f"Auto-Update? (#{obj_i+1}) => current_value = Anzahl Einträge",
                 value=obj.get("auto_update", False),
-                key=f"auto_update_{cat_i}_{obj_i}"
+                key=f"auto_update_{cat_i}_{obj_i}",
+                help="Wenn aktiviert, wird der aktuelle Wert automatisch anhand der Eintragsliste berechnet."
             )
+
         st.write("---")
 
+    # Änderungen speichern
     if st.button("Änderungen speichern"):
         save_data_to_gist(okr_data)
         st.success("Änderungen wurden gespeichert.")
 
+    # Neue Kategorie hinzufügen
     if st.button("Neue Kategorie hinzufügen"):
         okr_data.append({
             "category_name": "Neue Kategorie",
             "objectives": []
         })
         save_data_to_gist(okr_data)
-        st.experimental_rerun()  # Hier nur, um sofort die neue Kategorie zu sehen.
+        st.experimental_rerun()  # Nur hier ist ein Rerun sinnvoll, damit die neue Kategorie direkt erscheint
 
 # -------------------------------------------
 # 9) Navigation
